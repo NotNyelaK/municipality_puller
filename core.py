@@ -3,10 +3,11 @@ from bs4 import BeautifulSoup
 import pandas as pd
 import time
 from googlesearch import search
+import re
 
 def fetcher():
     # Defines the url that it will search for
-
+    print("In fetcher")
     url = "https://en.wikipedia.org/wiki/List_of_municipalities_in_Alberta"
 
     # actually pulls the url
@@ -23,15 +24,51 @@ def fetcher():
         cells = row.find_all('th')
         if len(cells) > 0: #apparently needed for index error fix
             name = cells[0].get_text(strip=True)
+        
+        l_data = row.find_all('a')
+        if len(l_data) > 0:
+            wiki_url = l_data[0].get('href')
         c_data = row.find_all('td')
         if len(c_data) > 0:
             pop = c_data[2].get_text(strip=True) if len(c_data) > 2 else 'N/A'
             land_area = c_data[-2].get_text(strip=True) if len(c_data) > 3 else 'N/A'
-            municipalities.append({'Name': name, 'Recent Population': pop, 'Land Area in km2': land_area})
 
+        print("defining dict")
+        municipality_dictionary = {
+            'Name': name,
+            'Recent Population': pop,
+            'Land Area in km²': land_area,
+            'wikilink': f"https://en.wikipedia.org{wiki_url}"
+        }
+
+        # Find longitude and latitude data
+        response2 = requests.get(municipality_dictionary['wikilink'])
+        spicysoup = BeautifulSoup(response2.text, 'html.parser')
+        
+        latitude = spicysoup.find("span", {"class": "latitude"})
+        longitude = spicysoup.find("span", {"class": "longitude"})
+        
+        # Set latitude and longitude only if found
+        mun_lat = latitude.get_text(strip=True) if latitude else 'N/A'
+        mun_lon = longitude.get_text(strip=True) if longitude else 'N/A'
+        
+        # Add latitude and longitude to the dictionary
+        municipality_dictionary['latitude'] = mun_lat
+        municipality_dictionary['longitude'] = mun_lon
+        
+        
+        # Append the complete dictionary to the municipalities list
+
+        municipality_dictionary['official website'] = web_finder(name)
+        
+        print(municipality_dictionary)
+        municipalities.append(municipality_dictionary)
+
+    time.sleep(4)
     return municipalities
 
 def web_finder(municipality_name):
+    print("in web_finder")
     #f"<String>" allows for a variable name to be used in the string
     query = f"{municipality_name} municipality official website"
     try:
@@ -52,24 +89,7 @@ def csv_export(data, filename="municipalities_alberta.csv"): #eventually needs t
 
 def main():
     municipalities = fetcher()
-
-    columns = ['Name', 'Recent Population', 'Area', 'Website']
-    df = pd.DataFrame(columns=columns)
-
-    for municipality in municipalities:
-        name = municipality['Name']
-        print(f"Storing the municipality of {name}")
-        website = web_finder(name)
-        df = pd.concat([df, pd.DataFrame([{
-            'Name': name,
-            'Recent Population': municipality['Recent Population'],
-            'Land Area in km2': municipality['Land Area in km2'],
-            'Website': website
-        }])], ignore_index=True)
-
-        time.sleep(4)
-
-        csv_export(df)
+    csv_export(municipalities)
 
 if __name__ == "__main__":
     main()
